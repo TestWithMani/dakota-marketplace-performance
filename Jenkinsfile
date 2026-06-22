@@ -379,7 +379,7 @@ def getEffectiveRunConfig() {
     return [
         scheduledBuild   : scheduled,
         testSelectionMode: scheduled ? 'ALL_TABS' : (params.TEST_SELECTION_MODE as String),
-        freshReportOutput: scheduled ? false : (params.FRESH_REPORT_OUTPUT as boolean),
+        freshReportOutput: scheduled ? true : (params.FRESH_REPORT_OUTPUT as boolean),
         additionalEmails : scheduled
             ? 'pstanley@dakota.com, draftcrm@rolustech.com'
             : (params.ADDITIONAL_EMAILS as String),
@@ -1019,7 +1019,7 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
         ABORTED : [bg: '#f8fafc', border: '#64748b', text: '#334155', pillBg: '#e2e8f0'],
         UNSTABLE: [bg: '#fffbeb', border: '#f59e0b', text: '#92400e', pillBg: '#fef3c7']
     ]
-    def subject = "Dakota Marketplace Performance | ${new Date().format('yyyy-MM-dd')}"
+    def subject = "Dakota Marketplace Performance | ${new Date().format('MMMM d, yyyy')}"
 
     def body = """
 <!DOCTYPE html>
