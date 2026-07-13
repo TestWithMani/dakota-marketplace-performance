@@ -8,9 +8,9 @@ pipeline {
         timeout(time: 200, unit: 'MINUTES')
     }
 
-    triggers {
-        cron('0 10 * * 1')
-    }
+    // triggers {
+    //     cron('0 10 * * 1')
+    // }
 
     parameters {
         choice(
@@ -35,7 +35,7 @@ pipeline {
         )
         string(
             name: 'DEFAULT_EMAIL',
-            defaultValue: 'draftcrm@rolustech.com',
+            defaultValue: 'usman.arshad@gmail.com',
             description: 'Primary recipient for pipeline report emails.'
         )
         string(
