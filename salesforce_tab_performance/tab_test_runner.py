@@ -8,6 +8,7 @@ from statistics import mean
 import allure
 import pytest
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.ui import WebDriverWait
 
@@ -128,16 +129,203 @@ def run_tab_performance_test(
     )
 
 
+# Login attempts a full username+password fill cycle this many times before failing.
+LOGIN_FILL_RETRIES = 3
+
+# Ordered fallback locators. The configured Salesforce IDs are tried first, then
+# generic attribute-based locators for resilience against Experience Cloud markup drift.
+USERNAME_LOCATORS = (
+    (By.ID, config.USERNAME_FIELD_ID),
+    (By.NAME, "username"),
+    (By.CSS_SELECTOR, "input[type='email']"),
+    (By.CSS_SELECTOR, "input[autocomplete='username']"),
+)
+PASSWORD_LOCATORS = (
+    (By.ID, config.PASSWORD_FIELD_ID),
+    (By.NAME, "password"),
+    (By.CSS_SELECTOR, "input[type='password']"),
+    (By.CSS_SELECTOR, "input[autocomplete='current-password']"),
+)
+SUBMIT_LOCATORS = (
+    (By.ID, config.SUBMIT_BUTTON_ID),
+    (By.CSS_SELECTOR, "button[type='submit']"),
+    (By.CSS_SELECTOR, "input[type='submit']"),
+    (By.XPATH, "//button[contains(.,'Log In') or contains(.,'Login')]"),
+)
+
+
 def _login_to_salesforce(driver, wait: WebDriverWait) -> None:
-    """Authenticate with credentials provided via environment variables."""
+    """Authenticate with credentials provided via environment variables.
+
+    The Experience Cloud login form is flaky: password focus / partial page
+    settle can leave the username blank. We re-find fields, verify both values,
+    and refill the username if it was cleared before submitting.
+    """
     username = _required_env("SF_USERNAME")
     password = _required_env("SF_PASSWORD")
 
     driver.get(config.LOGIN_URL)
-    wait.until(ec.visibility_of_element_located((By.ID, config.USERNAME_FIELD_ID))).send_keys(username)
-    wait.until(ec.visibility_of_element_located((By.ID, config.PASSWORD_FIELD_ID))).send_keys(password)
-    wait.until(ec.element_to_be_clickable((By.ID, config.SUBMIT_BUTTON_ID))).click()
+    _wait_for_visible_field(driver, wait, USERNAME_LOCATORS)
+    _wait_for_visible_field(driver, wait, PASSWORD_LOCATORS)
+    # Allow Experience Cloud / Aura handlers to attach before interacting.
+    time.sleep(1.0)
+
+    last_error: Exception | None = None
+    for attempt in range(1, LOGIN_FILL_RETRIES + 1):
+        try:
+            print(f"[Login] Filling credentials (attempt {attempt}/{LOGIN_FILL_RETRIES})...")
+            _fill_credentials(driver, wait, username, password)
+            last_error = None
+            break
+        except Exception as exc:
+            last_error = exc
+            print(f"[Login] Fill attempt {attempt} failed: {exc}")
+            time.sleep(1.0)
+
+    if last_error is not None:
+        raise last_error
+
+    login_button = _find_first_visible(driver, SUBMIT_LOCATORS)
+    if login_button is None:
+        raise RuntimeError("Login submit button not found")
+
+    wait.until(ec.element_to_be_clickable(login_button))
+    try:
+        login_button.click()
+    except Exception:
+        driver.execute_script("arguments[0].click();", login_button)
+
     wait.until(ec.visibility_of_element_located((By.XPATH, config.START_ELEMENT_XPATH)))
+
+
+def _wait_for_visible_field(driver, wait: WebDriverWait, locators):
+    """Wait until any locator in the set resolves to a visible, enabled field."""
+    return wait.until(lambda _driver: _find_first_visible(driver, locators))
+
+
+def _find_first_visible(driver, locators):
+    """Return the first displayed and enabled element across ordered locators."""
+    for locator in locators:
+        for element in driver.find_elements(*locator):
+            try:
+                if element.is_displayed() and element.is_enabled():
+                    return element
+            except Exception:
+                continue
+    return None
+
+
+def _field_value(driver, field) -> str:
+    """Read the current input value via attribute, falling back to JS."""
+    try:
+        raw = field.get_attribute("value")
+        if raw is not None and str(raw).strip():
+            return str(raw).strip()
+    except Exception:
+        pass
+    try:
+        via_js = driver.execute_script("return arguments[0].value || '';", field)
+        return str(via_js or "").strip()
+    except Exception:
+        return ""
+
+
+def _js_set_value(driver, field, value: str) -> None:
+    """Set value with the native setter + events (Aura / Lightning-safe)."""
+    driver.execute_script(
+        """
+        const el = arguments[0];
+        const val = arguments[1];
+        el.focus();
+        const proto = window.HTMLInputElement.prototype;
+        const descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (descriptor && descriptor.set) {
+            descriptor.set.call(el, val);
+        } else {
+            el.value = val;
+        }
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+        """,
+        field,
+        value,
+    )
+
+
+def _set_input_value(driver, wait: WebDriverWait, field, value: str, *, label: str) -> None:
+    """Populate a login field reliably: JS set first, then send_keys fallback."""
+    wait.until(lambda _driver: field.is_displayed() and field.is_enabled())
+    driver.execute_script("arguments[0].scrollIntoView({block:'center'});", field)
+    try:
+        driver.execute_script("arguments[0].click();", field)
+    except Exception:
+        pass
+    time.sleep(0.25)
+
+    # Prefer JS set first — more reliable on Salesforce login than send_keys alone.
+    _js_set_value(driver, field, value)
+    time.sleep(0.2)
+
+    if _field_value(driver, field) != value.strip():
+        try:
+            field.send_keys(Keys.CONTROL, "a")
+            field.send_keys(Keys.BACKSPACE)
+        except Exception:
+            try:
+                field.clear()
+            except Exception:
+                pass
+        field.send_keys(value)
+        time.sleep(0.3)
+
+    if _field_value(driver, field) != value.strip():
+        _js_set_value(driver, field, value)
+        time.sleep(0.2)
+
+    actual = _field_value(driver, field)
+    if actual != value.strip():
+        raise ValueError(
+            f"Could not populate login {label}. Expected '{value}', got '{actual}'"
+        )
+
+
+def _fill_credentials(driver, wait: WebDriverWait, user: str, pwd: str) -> None:
+    """Fill username then password, and re-check username after password."""
+    username_field = _wait_for_visible_field(driver, wait, USERNAME_LOCATORS)
+    _set_input_value(driver, wait, username_field, user, label="username")
+
+    password_field = _wait_for_visible_field(driver, wait, PASSWORD_LOCATORS)
+    _set_input_value(driver, wait, password_field, pwd, label="password")
+
+    # Password focus / autofill often clears username on this form.
+    username_field = _wait_for_visible_field(driver, wait, USERNAME_LOCATORS)
+    if _field_value(driver, username_field) != user.strip():
+        print("[Login] Username was empty/cleared after password fill — refilling.")
+        _set_input_value(driver, wait, username_field, user, label="username")
+
+    password_field = _wait_for_visible_field(driver, wait, PASSWORD_LOCATORS)
+    if _field_value(driver, password_field) != pwd.strip():
+        print("[Login] Password missing after username refill — refilling.")
+        _set_input_value(driver, wait, password_field, pwd, label="password")
+        # Final username check after the second password fill.
+        username_field = _wait_for_visible_field(driver, wait, USERNAME_LOCATORS)
+        if _field_value(driver, username_field) != user.strip():
+            _set_input_value(driver, wait, username_field, user, label="username")
+
+    username_field = _wait_for_visible_field(driver, wait, USERNAME_LOCATORS)
+    password_field = _wait_for_visible_field(driver, wait, PASSWORD_LOCATORS)
+    user_actual = _field_value(driver, username_field)
+    pwd_actual = _field_value(driver, password_field)
+    if user_actual != user.strip() or pwd_actual != pwd.strip():
+        raise ValueError(
+            f"Login fields not ready. username='{user_actual}', "
+            f"password_len={len(pwd_actual)} (expected {len(pwd.strip())})"
+        )
+    print(
+        f"[Login] Credentials verified "
+        f"(username_len={len(user_actual)}, password_len={len(pwd_actual)})."
+    )
 
 
 def _required_env(variable_name: str) -> str:
