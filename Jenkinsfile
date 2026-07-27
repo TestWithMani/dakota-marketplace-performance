@@ -682,7 +682,7 @@ def runPytest(String args) {
 }
 
 def getTestStatistics() {
-    def stats = [total: 0, passed: 0, failed: 0, skipped: 0]
+    def stats = [total: 0, passed: 0, failed: 0, skipped: 0, collected: 0, not_run: 0]
     def junitPath = env.PYTEST_JUNIT ?: 'test-results/pytest.xml'
     def jsonSnapshot = getFinalOutcomesFromPytestJson()
 
@@ -703,6 +703,8 @@ def getTestStatistics() {
             stats.failed = failures + errors
             stats.skipped = skipped
             stats.passed = passed
+            stats.collected = tests
+            stats.not_run = 0
             echo "Using JUnit fallback stats -> total:${stats.total}, passed:${stats.passed}, failed:${stats.failed}, skipped:${stats.skipped}"
         } catch (Exception ex) {
             echo "Could not parse JUnit XML fallback: ${ex.message}"
@@ -821,7 +823,7 @@ def getSkippedInfraTestNames() {
 
 def getFinalOutcomesFromPytestJson() {
     def reportPath = env.PYTEST_JSON ?: 'test-results/report.json'
-    def emptyStats = [total: 0, passed: 0, failed: 0, skipped: 0]
+    def emptyStats = [total: 0, passed: 0, failed: 0, skipped: 0, collected: 0, not_run: 0]
     def result = [hasData: false, stats: emptyStats, failedTests: []]
 
     if (!fileExists(reportPath)) {
@@ -836,6 +838,10 @@ def getFinalOutcomesFromPytestJson() {
         def finalOutcomeByNodeId = [:]
 
         // Capture nodeid/outcome pairs from each test object.
+        // IMPORTANT: pytest-json-report also emits collectors with
+        //   "nodeid": "tests/foo.py", "outcome": "passed"
+        // meaning collection succeeded — NOT that the test passed.
+        // Real executed tests always use nodeids containing "::".
         def testMatcher = (jsonText =~ /"nodeid"\s*:\s*"((?:\\.|[^"\\])*)".*?"outcome"\s*:\s*"((?:\\.|[^"\\])*)"/)
         while (testMatcher.find()) {
             def nodeId = (testMatcher.group(1) ?: '')
@@ -844,6 +850,10 @@ def getFinalOutcomesFromPytestJson() {
                 .trim()
             def outcome = (testMatcher.group(2) ?: '').trim().toLowerCase()
             if (!nodeId || !outcome) {
+                continue
+            }
+            // Ignore collector / file-level outcomes (no "::").
+            if (!nodeId.contains('::')) {
                 continue
             }
 
@@ -876,47 +886,64 @@ def getFinalOutcomesFromPytestJson() {
             def failed = finalOutcomeByNodeId.findAll { _, status -> status == 'failed' }.size()
             def skipped = finalOutcomeByNodeId.findAll { _, status -> status == 'skipped' }.size()
             def total = passed + failed + skipped
+            // Do NOT invent passes from (collected - completed). Aborted/interrupted
+            // runs leave unexecuted tests; counting them as passed is wrong.
             if (collected > 0 && total > collected) {
-                // Guard against plugin-specific overcounting (e.g., retry artifacts in JSON).
-                def normFailed = Math.min(failed, collected)
-                def remainingAfterFailed = Math.max(collected - normFailed, 0)
-                def normSkipped = Math.min(skipped, remainingAfterFailed)
-                def normPassed = Math.max(collected - normFailed - normSkipped, 0)
-                passed = normPassed
-                failed = normFailed
-                skipped = normSkipped
-                total = collected
+                // Cap only when plugin artifacts overcount beyond collected.
+                echo "Pytest JSON overcount detected (completed=${total}, collected=${collected}); capping to executed outcomes without inventing passes."
+                // Prefer keeping real failed/skipped; trim excess from passed first.
+                def overflow = total - collected
+                passed = Math.max(passed - overflow, 0)
+                total = passed + failed + skipped
+                if (total > collected) {
+                    def stillOver = total - collected
+                    skipped = Math.max(skipped - stillOver, 0)
+                    total = passed + failed + skipped
+                }
+                if (total > collected) {
+                    failed = Math.max(failed - (total - collected), 0)
+                    total = passed + failed + skipped
+                }
             }
+            def notRun = collected > 0 ? Math.max(collected - total, 0) : 0
             def failedTests = finalOutcomeByNodeId
                 .findAll { _, status -> status == 'failed' }
                 .collect { nodeId, _ -> extractDisplayNameFromNodeId(nodeId as String) }
                 .findAll { it }
                 .unique()
+            if (notRun > 0) {
+                echo "Pytest JSON incomplete run -> completed:${total}, collected:${collected}, not_run:${notRun}, passed:${passed}, failed:${failed}, skipped:${skipped}"
+            }
             return [
                 hasData: true,
-                stats: [total: total, passed: passed, failed: failed, skipped: skipped],
+                stats: [total: total, passed: passed, failed: failed, skipped: skipped, collected: collected, not_run: notRun],
                 failedTests: failedTests
             ]
         }
 
         // Fallback to summary counters if per-test entries are unavailable.
+        // Use only explicit passed/failed/skipped — never treat "collected" as passed.
         def passed = parseSummaryInt('passed')
         def failed = parseSummaryInt('failed') + parseSummaryInt('error')
         def skipped = parseSummaryInt('skipped') + parseSummaryInt('xfailed') + parseSummaryInt('xpassed')
         def total = passed + failed + skipped
         if (collected > 0 && total > collected) {
-            // Keep email/dashboard counts aligned to collected tests.
-            def normFailed = Math.min(failed, collected)
-            def remainingAfterFailed = Math.max(collected - normFailed, 0)
-            def normSkipped = Math.min(skipped, remainingAfterFailed)
-            def normPassed = Math.max(collected - normFailed - normSkipped, 0)
-            passed = normPassed
-            failed = normFailed
-            skipped = normSkipped
-            total = collected
+            echo "Pytest JSON summary overcount detected (completed=${total}, collected=${collected}); capping without inventing passes."
+            def overflow = total - collected
+            passed = Math.max(passed - overflow, 0)
+            total = passed + failed + skipped
         }
-        if (total > 0) {
-            return [hasData: true, stats: [total: total, passed: passed, failed: failed, skipped: skipped], failedTests: []]
+        def notRun = collected > 0 ? Math.max(collected - total, 0) : 0
+        // hasData when we have either executed outcomes OR a collected count from an aborted run.
+        if (total > 0 || collected > 0) {
+            if (notRun > 0) {
+                echo "Pytest JSON summary incomplete run -> completed:${total}, collected:${collected}, not_run:${notRun}, passed:${passed}, failed:${failed}, skipped:${skipped}"
+            }
+            return [
+                hasData: true,
+                stats: [total: total, passed: passed, failed: failed, skipped: skipped, collected: collected, not_run: notRun],
+                failedTests: []
+            ]
         }
     } catch (Exception ex) {
         echo "Could not parse pytest JSON report: ${ex.message}"
@@ -958,12 +985,21 @@ def logTestSummaryToConsole(String label = 'Test summary') {
     def infraSkipLine = skippedInfraTests
         ? "Infra skipped tabs: ${skippedInfraTests.join(', ')}"
         : 'Infra skipped tabs: none'
+    def collected = (stats.collected ?: 0) as int
+    def notRun = (stats.not_run ?: 0) as int
+    def collectedLine = collected > 0 ? "Collected: ${collected}" : null
+    def notRunLine = notRun > 0 ? "Not run : ${notRun}" : null
+    def abortNote = ((currentBuild?.result ?: currentBuild?.currentResult ?: '') == 'ABORTED')
+        ? 'NOTE    : Build was ABORTED — counts reflect only tests that actually finished.'
+        : null
+    def extraLines = [collectedLine, notRunLine, abortNote].findAll { it }.join('\n')
+    def extraBlock = extraLines ? "\n${extraLines}" : ''
     echo """
 ================ ${label} ================
 Total  : ${stats.total}
 Passed : ${stats.passed}
 Failed : ${stats.failed}
-Skipped: ${stats.skipped}
+Skipped: ${stats.skipped}${extraBlock}
 ${infraSkipLine}
 ==========================================
 """.stripIndent()
@@ -973,6 +1009,8 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
     def stats = getTestStatistics()
     def failedTests = getFailedTestNames()
     def actualStatus = currentBuild.result ?: buildStatus
+    def notRun = (stats.not_run ?: 0) as int
+    def collected = (stats.collected ?: 0) as int
 
     // Preserve Jenkins infra/build failures as source of truth.
     if (!(actualStatus in ['FAILURE', 'ABORTED'])) {
@@ -1007,11 +1045,28 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
             .replaceAll(/(?i)\btab\(s\)\b/, 'Tabs')
             .trim()
     }.findAll { it }
-    def failedTestSummary = cleanedFailedTests
-        ? cleanedFailedTests.collect { item ->
-            "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
-        }.join('')
-        : '<span style="color:#065f46;font-weight:600;">No failed tests or tab timeouts were detected in this run.</span>'
+    def failedTestSummary
+    if (actualStatus == 'ABORTED' && stats.total == 0) {
+        failedTestSummary = '<span style="color:#334155;font-weight:600;">Build was aborted before any tests completed. Passed count is 0 (not a successful run).</span>'
+    } else if (actualStatus == 'ABORTED' && notRun > 0) {
+        failedTestSummary = cleanedFailedTests
+            ? cleanedFailedTests.collect { item ->
+                "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
+            }.join('') + "<div style=\"margin-top:8px;color:#334155;font-weight:600;\">Build aborted — ${notRun} of ${collected} collected tests did not run.</div>"
+            : "<span style=\"color:#334155;font-weight:600;\">Build aborted — ${notRun} of ${collected} collected tests did not run. Counts above are only for finished tests.</span>"
+    } else {
+        failedTestSummary = cleanedFailedTests
+            ? cleanedFailedTests.collect { item ->
+                "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
+            }.join('')
+            : '<span style="color:#065f46;font-weight:600;">No failed tests or tab timeouts were detected in this run.</span>'
+    }
+
+    def notRunRow = (notRun > 0 || actualStatus == 'ABORTED') ? """
+                <tr>
+                  <td style="padding:10px 12px;background:linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%);border-bottom:1px solid #bfdbfe;"><strong>Not Run</strong></td>
+                  <td style="padding:10px 12px;border-bottom:1px solid #dbe3f3;font-weight:600;color:#334155;">${notRun}${collected > 0 ? " / ${collected} collected" : ''}</td>
+                </tr>""" : ''
 
     def statusCfg = [
         SUCCESS : [bg: '#ecfdf5', border: '#10b981', text: '#065f46', pillBg: '#dcfce7'],
@@ -1020,6 +1075,9 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
         UNSTABLE: [bg: '#fffbeb', border: '#f59e0b', text: '#92400e', pillBg: '#fef3c7']
     ]
     def subject = "Dakota Marketplace Performance | ${new Date().format('MMMM d, yyyy')}"
+    if (actualStatus == 'ABORTED') {
+        subject = "Dakota Marketplace Performance | ABORTED | ${new Date().format('MMMM d, yyyy')}"
+    }
 
     def body = """
 <!DOCTYPE html>
@@ -1036,6 +1094,7 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
           <tr>
             <td style="padding:26px 30px;background:linear-gradient(135deg,#0f172a 0%,#1e40af 52%,#7c3aed 100%);color:#ffffff;">
               <h2 style="margin:0;font-size:30px;letter-spacing:0.2px;">Dakota Marketplace Performance</h2>
+              <div style="margin-top:8px;font-size:14px;opacity:0.9;">Status: <strong>${actualStatus}</strong></div>
             </td>
           </tr>
 
@@ -1058,7 +1117,7 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
                 <tr>
                   <td style="padding:10px 12px;background:linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%);border-bottom:1px solid #bfdbfe;"><strong>Passed Percentage</strong></td>
                   <td style="padding:10px 12px;border-bottom:1px solid #dbe3f3;color:#0f766e;font-weight:700;">${passRate}%</td>
-                </tr>
+                </tr>${notRunRow}
                 <tr>
                   <td style="padding:10px 12px;background:linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%);"><strong>Failed Tests / Affected Tabs</strong></td>
                   <td style="padding:10px 12px;line-height:1.45;">${failedTestSummary}</td>
