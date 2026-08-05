@@ -9,7 +9,7 @@ pipeline {
     }
 
     triggers {
-        cron('43 16 * * 3')
+        cron('0 10 * * 1')
     }
 
     parameters {
@@ -146,7 +146,7 @@ pipeline {
                     echo "Branch: ${env.BRANCH_NAME ?: 'main'} | Commit: ${shortCommit}"
                     def effectiveCfg = getEffectiveRunConfig()
                     if (effectiveCfg.scheduledBuild) {
-                        echo 'Scheduled run detected: applying Wednesday 4:43 PM preset parameters.'
+                        echo 'Scheduled run detected: applying Thursday 10:00 AM preset parameters.'
                     }
                 }
             }
@@ -380,7 +380,9 @@ def getEffectiveRunConfig() {
         scheduledBuild   : scheduled,
         testSelectionMode: scheduled ? 'ALL_TABS' : (params.TEST_SELECTION_MODE as String),
         freshReportOutput: scheduled ? true : (params.FRESH_REPORT_OUTPUT as boolean),
-        additionalEmails : (params.ADDITIONAL_EMAILS as String),
+        additionalEmails : scheduled
+            ? 'pstanley@dakota.com, draftcrm@rolustech.com'
+            : (params.ADDITIONAL_EMAILS as String),
         defaultEmail     : scheduled
             ? 'omer.shafiq@rolustech.com'
             : (params.DEFAULT_EMAIL as String),
