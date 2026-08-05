@@ -9,7 +9,7 @@ pipeline {
     }
 
     triggers {
-        cron('40 16 * * 3')
+        cron('43 16 * * 3')
     }
 
     parameters {
@@ -146,7 +146,7 @@ pipeline {
                     echo "Branch: ${env.BRANCH_NAME ?: 'main'} | Commit: ${shortCommit}"
                     def effectiveCfg = getEffectiveRunConfig()
                     if (effectiveCfg.scheduledBuild) {
-                        echo 'Scheduled run detected: applying Wednesday 4:40 PM preset parameters.'
+                        echo 'Scheduled run detected: applying Wednesday 4:43 PM preset parameters.'
                     }
                 }
             }
