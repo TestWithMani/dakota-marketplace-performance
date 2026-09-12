@@ -35,7 +35,7 @@ pipeline {
         )
         string(
             name: 'DEFAULT_EMAIL',
-            defaultValue: 'usman.arshad@gmail.com',
+            defaultValue: 'usman.arshad@rolustech.com',
             description: 'Primary recipient for pipeline report emails.'
         )
         string(
@@ -73,25 +73,28 @@ pipeline {
             defaultValue: true,
             description: 'Send HTML email summary after pipeline completion.'
         )
-        booleanParam(name: 'TAB_13F_FILINGS_INVESTMENTS_SEARCH', defaultValue: false, description: 'Run 13F Filings Investments Search tab test.')
         booleanParam(name: 'TAB_13F_FILINGS', defaultValue: false, description: 'Run 13F Filings tab test.')
         booleanParam(name: 'TAB_ACCOUNTS', defaultValue: false, description: 'Run Accounts tab test.')
         booleanParam(name: 'TAB_ALL_DOCUMENTS', defaultValue: false, description: 'Run All Documents tab test.')
         booleanParam(name: 'TAB_BENCHMARKING', defaultValue: false, description: 'Run Benchmarking tab test.')
         booleanParam(name: 'TAB_CONFERENCE_DASHBOARD', defaultValue: false, description: 'Run Conference Dashboard tab test.')
+        booleanParam(name: 'TAB_CONFERENCE_SPEAKERS', defaultValue: false, description: 'Run Conference Speakers tab test.')
         booleanParam(name: 'TAB_CONFERENCE', defaultValue: false, description: 'Run Conference tab test.')
         booleanParam(name: 'TAB_CONSULTANT_REVIEWS_DASHBOARD', defaultValue: false, description: 'Run Consultant Reviews Dashboard tab test.')
         booleanParam(name: 'TAB_CONTACT', defaultValue: false, description: 'Run Contact tab test.')
         booleanParam(name: 'TAB_CUSTOM_PORTFOLIO_DASHBOARD', defaultValue: false, description: 'Run Custom Portfolio Dashboard tab test.')
+        booleanParam(name: 'TAB_DAKOTA_BENCHMARKS', defaultValue: false, description: 'Run Dakota Benchmarks tab test.')
         booleanParam(name: 'TAB_DAKOTA_CITY_GUIDES', defaultValue: false, description: 'Run Dakota City Guides tab test.')
         booleanParam(name: 'TAB_DAKOTA_JOE_REPORTS', defaultValue: false, description: 'Run Dakota Joe Reports tab test.')
         booleanParam(name: 'TAB_DAKOTA_VIDEOS', defaultValue: false, description: 'Run Dakota Videos tab test.')
         booleanParam(name: 'TAB_EVERGREEN_FUND_PERFORMANCE', defaultValue: false, description: 'Run Evergreen Fund Performance tab test.')
+        booleanParam(name: 'TAB_FAMILY_OFFICE_INVESTMENTS', defaultValue: false, description: 'Run Family Office Investments tab test.')
         booleanParam(name: 'TAB_FEE_SCHEDULES_DASHBOARD', defaultValue: false, description: 'Run Fee Schedules Dashboard tab test.')
         booleanParam(name: 'TAB_FORECASTED_TRANSACTIONS', defaultValue: false, description: 'Run Forecasted Transactions tab test.')
         booleanParam(name: 'TAB_FUND_FAMILY_MEMOS', defaultValue: false, description: 'Run Fund Family Memos tab test.')
         booleanParam(name: 'TAB_FUND_LAUNCHES', defaultValue: false, description: 'Run Fund Launches tab test.')
         booleanParam(name: 'TAB_FUNDRAISING_NEWS', defaultValue: false, description: 'Run Fundraising News tab test.')
+        booleanParam(name: 'TAB_HEDGE_FUND_PERFORMANCE_BENCHMARKING', defaultValue: false, description: 'Run Hedge Fund Performance Benchmarking tab test.')
         booleanParam(name: 'TAB_HEDGE_FUND_PERFORMANCE', defaultValue: false, description: 'Run Hedge Fund Performance tab test.')
         booleanParam(name: 'TAB_INVESTMENT_ALLOCATOR_CONTACTS', defaultValue: false, description: 'Run Investment Allocator Contacts tab test.')
         booleanParam(name: 'TAB_INVESTMENT_ALLOCATOR_METRO_AREAS', defaultValue: false, description: 'Run Investment Allocator Metro Areas tab test.')
@@ -117,6 +120,7 @@ pipeline {
         booleanParam(name: 'TAB_REPORTS_EVERYTHING', defaultValue: false, description: 'Run Reports Everything tab test.')
         booleanParam(name: 'TAB_REPORTS_MRU', defaultValue: false, description: 'Run Reports MRU tab test.')
         booleanParam(name: 'TAB_REPORTS_USER_FOLDERS', defaultValue: false, description: 'Run Reports User Folders tab test.')
+        booleanParam(name: 'TAB_RESEARCH_REPORT', defaultValue: false, description: 'Run Research Report tab test.')
         booleanParam(name: 'TAB_SEARCHES_DASHBOARD', defaultValue: false, description: 'Run Searches Dashboard tab test.')
         booleanParam(name: 'TAB_UNIVERSITY_ALUMNI', defaultValue: false, description: 'Run University Alumni tab test.')
         booleanParam(name: 'TAB_WEALTH_CHANNEL_METRO_AREAS', defaultValue: false, description: 'Run Wealth Channel Metro Areas tab test.')
@@ -560,25 +564,28 @@ def getSmokeTestCaseFiles() {
 
 def getAvailableTestCaseFiles() {
     return [
-        'tests/test_13f_filings_investments_search_tab_performance.py',
         'tests/test_13f_filings_tab_performance.py',
         'tests/test_accounts_tab_performance.py',
         'tests/test_all_documents_tab_performance.py',
         'tests/test_benchmarking_tab_performance.py',
         'tests/test_conference_dashboard_tab_performance.py',
+        'tests/test_conference_speakers_tab_performance.py',
         'tests/test_conference_tab_performance.py',
         'tests/test_consultant_reviews_dashboard_tab_performance.py',
         'tests/test_contact_tab_performance.py',
         'tests/test_custom_portfolio_dashboard_tab_performance.py',
+        'tests/test_dakota_benchmarks_tab_performance.py',
         'tests/test_dakota_city_guides_tab_performance.py',
         'tests/test_dakota_joe_reports_tab_performance.py',
         'tests/test_dakota_videos_tab_performance.py',
         'tests/test_evergreen_fund_performance_tab_performance.py',
+        'tests/test_family_office_investments_tab_performance.py',
         'tests/test_fee_schedules_dashboard_tab_performance.py',
         'tests/test_forecasted_transactions_tab_performance.py',
         'tests/test_fund_family_memos_tab_performance.py',
         'tests/test_fund_launches_tab_performance.py',
         'tests/test_fundraising_news_tab_performance.py',
+        'tests/test_hedge_fund_performance_benchmarking_tab_performance.py',
         'tests/test_hedge_fund_performance_tab_performance.py',
         'tests/test_investment_allocator_contacts_tab_performance.py',
         'tests/test_investment_allocator_metro_areas_tab_performance.py',
@@ -604,6 +611,7 @@ def getAvailableTestCaseFiles() {
         'tests/test_reports_everything_tab_performance.py',
         'tests/test_reports_mru_tab_performance.py',
         'tests/test_reports_user_folders_tab_performance.py',
+        'tests/test_research_report_tab_performance.py',
         'tests/test_searches_dashboard_tab_performance.py',
         'tests/test_university_alumni_tab_performance.py',
         'tests/test_wealth_channel_metro_areas_tab_performance.py'
@@ -612,25 +620,28 @@ def getAvailableTestCaseFiles() {
 
 def getTestCaseCheckboxMap() {
     return [
-        [param: 'TAB_13F_FILINGS_INVESTMENTS_SEARCH', file: 'tests/test_13f_filings_investments_search_tab_performance.py'],
         [param: 'TAB_13F_FILINGS', file: 'tests/test_13f_filings_tab_performance.py'],
         [param: 'TAB_ACCOUNTS', file: 'tests/test_accounts_tab_performance.py'],
         [param: 'TAB_ALL_DOCUMENTS', file: 'tests/test_all_documents_tab_performance.py'],
         [param: 'TAB_BENCHMARKING', file: 'tests/test_benchmarking_tab_performance.py'],
         [param: 'TAB_CONFERENCE_DASHBOARD', file: 'tests/test_conference_dashboard_tab_performance.py'],
+        [param: 'TAB_CONFERENCE_SPEAKERS', file: 'tests/test_conference_speakers_tab_performance.py'],
         [param: 'TAB_CONFERENCE', file: 'tests/test_conference_tab_performance.py'],
         [param: 'TAB_CONSULTANT_REVIEWS_DASHBOARD', file: 'tests/test_consultant_reviews_dashboard_tab_performance.py'],
         [param: 'TAB_CONTACT', file: 'tests/test_contact_tab_performance.py'],
         [param: 'TAB_CUSTOM_PORTFOLIO_DASHBOARD', file: 'tests/test_custom_portfolio_dashboard_tab_performance.py'],
+        [param: 'TAB_DAKOTA_BENCHMARKS', file: 'tests/test_dakota_benchmarks_tab_performance.py'],
         [param: 'TAB_DAKOTA_CITY_GUIDES', file: 'tests/test_dakota_city_guides_tab_performance.py'],
         [param: 'TAB_DAKOTA_JOE_REPORTS', file: 'tests/test_dakota_joe_reports_tab_performance.py'],
         [param: 'TAB_DAKOTA_VIDEOS', file: 'tests/test_dakota_videos_tab_performance.py'],
         [param: 'TAB_EVERGREEN_FUND_PERFORMANCE', file: 'tests/test_evergreen_fund_performance_tab_performance.py'],
+        [param: 'TAB_FAMILY_OFFICE_INVESTMENTS', file: 'tests/test_family_office_investments_tab_performance.py'],
         [param: 'TAB_FEE_SCHEDULES_DASHBOARD', file: 'tests/test_fee_schedules_dashboard_tab_performance.py'],
         [param: 'TAB_FORECASTED_TRANSACTIONS', file: 'tests/test_forecasted_transactions_tab_performance.py'],
         [param: 'TAB_FUND_FAMILY_MEMOS', file: 'tests/test_fund_family_memos_tab_performance.py'],
         [param: 'TAB_FUND_LAUNCHES', file: 'tests/test_fund_launches_tab_performance.py'],
         [param: 'TAB_FUNDRAISING_NEWS', file: 'tests/test_fundraising_news_tab_performance.py'],
+        [param: 'TAB_HEDGE_FUND_PERFORMANCE_BENCHMARKING', file: 'tests/test_hedge_fund_performance_benchmarking_tab_performance.py'],
         [param: 'TAB_HEDGE_FUND_PERFORMANCE', file: 'tests/test_hedge_fund_performance_tab_performance.py'],
         [param: 'TAB_INVESTMENT_ALLOCATOR_CONTACTS', file: 'tests/test_investment_allocator_contacts_tab_performance.py'],
         [param: 'TAB_INVESTMENT_ALLOCATOR_METRO_AREAS', file: 'tests/test_investment_allocator_metro_areas_tab_performance.py'],
@@ -656,6 +667,7 @@ def getTestCaseCheckboxMap() {
         [param: 'TAB_REPORTS_EVERYTHING', file: 'tests/test_reports_everything_tab_performance.py'],
         [param: 'TAB_REPORTS_MRU', file: 'tests/test_reports_mru_tab_performance.py'],
         [param: 'TAB_REPORTS_USER_FOLDERS', file: 'tests/test_reports_user_folders_tab_performance.py'],
+        [param: 'TAB_RESEARCH_REPORT', file: 'tests/test_research_report_tab_performance.py'],
         [param: 'TAB_SEARCHES_DASHBOARD', file: 'tests/test_searches_dashboard_tab_performance.py'],
         [param: 'TAB_UNIVERSITY_ALUMNI', file: 'tests/test_university_alumni_tab_performance.py'],
         [param: 'TAB_WEALTH_CHANNEL_METRO_AREAS', file: 'tests/test_wealth_channel_metro_areas_tab_performance.py']

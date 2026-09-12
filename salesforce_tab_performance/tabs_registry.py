@@ -39,6 +39,10 @@ TAB_REGISTRY: Mapping[str, TabDefinition] = {
         display_name="Conference Dashboard",
         url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/conference-dashboard",
     ),
+    "conference_speakers": TabDefinition(
+        display_name="Conference Speakers",
+        url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/conference-speakers",
+    ),
     "consultant_reviews_dashboard": TabDefinition(
         display_name="Consultant Reviews Dashboard",
         url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/consultant-reviews-dashboard",
@@ -52,6 +56,10 @@ TAB_REGISTRY: Mapping[str, TabDefinition] = {
         url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/custom-portfolio-dashboard",
         end_element_xpath=config.CUSTOM_DASHBOARD_END_ELEMENT_XPATH,
         end_condition="clickable",
+    ),
+    "dakota_benchmarks": TabDefinition(
+        display_name="Dakota Benchmarks",
+        url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/dakota-benchmarks",
     ),
     "dakota_city_guides": TabDefinition(
         display_name="Dakota City Guides",
@@ -75,6 +83,10 @@ TAB_REGISTRY: Mapping[str, TabDefinition] = {
         display_name="Fee Schedules Dashboard",
         url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/fee-schedules-dashboard",
     ),
+    "family_office_investments": TabDefinition(
+        display_name="Family Office Investments",
+        url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/family-office-investments",
+    ),
     "forecasted_transactions": TabDefinition(
         display_name="Forecasted Transactions",
         url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/forecasted-transactions",
@@ -94,6 +106,10 @@ TAB_REGISTRY: Mapping[str, TabDefinition] = {
     "hedge_fund_performance": TabDefinition(
         display_name="Hedge Fund Performance",
         url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/hedge-fund-performance",
+    ),
+    "hedge_fund_performance_benchmarking": TabDefinition(
+        display_name="Hedge Fund Performance Benchmarking",
+        url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/hedge-fund-performance-benchmarking",
     ),
     "investment_allocator": TabDefinition(
         display_name="Investment Allocator Accounts",
@@ -191,6 +207,10 @@ TAB_REGISTRY: Mapping[str, TabDefinition] = {
         display_name="Recent Transactions",
         url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/recent-transactions",
     ),
+    "research_report": TabDefinition(
+        display_name="Research Report",
+        url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/research-report",
+    ),
     "reports_everything": TabDefinition(
         display_name="Reports All",
         url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/report/Report/Recent/Report/?queryScope=everything",
@@ -228,10 +248,6 @@ TAB_REGISTRY: Mapping[str, TabDefinition] = {
     "13f_filings": TabDefinition(
         display_name="13F Filings",
         url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/13f-filings",
-    ),
-    "13f_filings_investments_search": TabDefinition(
-        display_name="13F Filings Investments Search",
-        url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/13f-filings-investments-search-tab",
     ),
 }
 
