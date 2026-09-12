@@ -197,7 +197,17 @@ def pytest_runtest_makereport(item, call):
             f"{infrastructure_error_summary(exc)}"
         )
         report.outcome = "skipped"
-        report.longrepr = reason
+        # pytest 8+/9 terminal expects skip longrepr as (path, lineno, reason).
+        # A plain string crashes pytest_runtest_logreport and aborts the suite.
+        try:
+            path = str(getattr(item, "path", None) or item.fspath)
+        except Exception:
+            path = str(item.nodeid)
+        try:
+            lineno = int((item.location or (None, 0, None))[1] or 0)
+        except Exception:
+            lineno = 0
+        report.longrepr = (path, lineno, reason)
         allure.dynamic.tag("infra_skip")
         allure.attach(
             body=reason,

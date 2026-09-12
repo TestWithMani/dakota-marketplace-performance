@@ -837,12 +837,13 @@ def getFinalOutcomesFromPytestJson() {
         def jsonText = readFile(reportPath)
         def finalOutcomeByNodeId = [:]
 
-        // Capture nodeid/outcome pairs from each test object.
-        // IMPORTANT: pytest-json-report also emits collectors with
-        //   "nodeid": "tests/foo.py", "outcome": "passed"
-        // meaning collection succeeded — NOT that the test passed.
-        // Real executed tests always use nodeids containing "::".
-        def testMatcher = (jsonText =~ /"nodeid"\s*:\s*"((?:\\.|[^"\\])*)".*?"outcome"\s*:\s*"((?:\\.|[^"\\])*)"/)
+        // Capture nodeid/outcome pairs from executed test objects only.
+        // pytest-json-report also emits:
+        //   1) collectors: "nodeid":"tests/foo.py","outcome":"passed" (collection OK)
+        //   2) collector result rows: "nodeid":"tests/foo.py::test_x" with NO outcome
+        // A loose .*? match can glue (2) to a later collector "passed" and invent passes.
+        // Require "::" and keep nodeid→outcome within the same small JSON object.
+        def testMatcher = (jsonText =~ /"nodeid"\s*:\s*"((?:\\.|[^"\\])*)"(?:(?!"nodeid")[\s\S]){0,500}?"outcome"\s*:\s*"((?:\\.|[^"\\])*)"/)
         while (testMatcher.find()) {
             def nodeId = (testMatcher.group(1) ?: '')
                 .replaceAll(/\\\//, '/')
@@ -1054,6 +1055,12 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
                 "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
             }.join('') + "<div style=\"margin-top:8px;color:#334155;font-weight:600;\">Build aborted — ${notRun} of ${collected} collected tests did not run.</div>"
             : "<span style=\"color:#334155;font-weight:600;\">Build aborted — ${notRun} of ${collected} collected tests did not run. Counts above are only for finished tests.</span>"
+    } else if (notRun > 0) {
+        failedTestSummary = cleanedFailedTests
+            ? cleanedFailedTests.collect { item ->
+                "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
+            }.join('') + "<div style=\"margin-top:8px;color:#9a3412;font-weight:600;\">Suite stopped early — ${notRun} of ${collected} collected tests did not run. Do not treat this as a full green run.</div>"
+            : "<span style=\"color:#9a3412;font-weight:600;\">Suite stopped early — ${notRun} of ${collected} collected tests did not run. Counts above are only for finished tests.</span>"
     } else {
         failedTestSummary = cleanedFailedTests
             ? cleanedFailedTests.collect { item ->
@@ -1061,12 +1068,6 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
             }.join('')
             : '<span style="color:#065f46;font-weight:600;">No failed tests or tab timeouts were detected in this run.</span>'
     }
-
-    def notRunRow = (notRun > 0 || actualStatus == 'ABORTED') ? """
-                <tr>
-                  <td style="padding:10px 12px;background:linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%);border-bottom:1px solid #bfdbfe;"><strong>Not Run</strong></td>
-                  <td style="padding:10px 12px;border-bottom:1px solid #dbe3f3;font-weight:600;color:#334155;">${notRun}${collected > 0 ? " / ${collected} collected" : ''}</td>
-                </tr>""" : ''
 
     def statusCfg = [
         SUCCESS : [bg: '#ecfdf5', border: '#10b981', text: '#065f46', pillBg: '#dcfce7'],
@@ -1094,7 +1095,6 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
           <tr>
             <td style="padding:26px 30px;background:linear-gradient(135deg,#0f172a 0%,#1e40af 52%,#7c3aed 100%);color:#ffffff;">
               <h2 style="margin:0;font-size:30px;letter-spacing:0.2px;">Dakota Marketplace Performance</h2>
-              <div style="margin-top:8px;font-size:14px;opacity:0.9;">Status: <strong>${actualStatus}</strong></div>
             </td>
           </tr>
 
@@ -1117,7 +1117,7 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
                 <tr>
                   <td style="padding:10px 12px;background:linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%);border-bottom:1px solid #bfdbfe;"><strong>Passed Percentage</strong></td>
                   <td style="padding:10px 12px;border-bottom:1px solid #dbe3f3;color:#0f766e;font-weight:700;">${passRate}%</td>
-                </tr>${notRunRow}
+                </tr>
                 <tr>
                   <td style="padding:10px 12px;background:linear-gradient(180deg,#dbeafe 0%,#bfdbfe 100%);"><strong>Failed Tests / Affected Tabs</strong></td>
                   <td style="padding:10px 12px;line-height:1.45;">${failedTestSummary}</td>
