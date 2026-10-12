@@ -95,7 +95,6 @@ pipeline {
         booleanParam(name: 'TAB_FUND_LAUNCHES', defaultValue: false, description: 'Run Fund Launches tab test.')
         booleanParam(name: 'TAB_FUNDRAISING_NEWS', defaultValue: false, description: 'Run Fundraising News tab test.')
         booleanParam(name: 'TAB_HEDGE_FUND_PERFORMANCE_BENCHMARKING', defaultValue: false, description: 'Run Hedge Fund Performance Benchmarking tab test.')
-        booleanParam(name: 'TAB_HEDGE_FUND_PERFORMANCE', defaultValue: false, description: 'Run Hedge Fund Performance tab test.')
         booleanParam(name: 'TAB_INVESTMENT_ALLOCATOR_CONTACTS', defaultValue: false, description: 'Run Investment Allocator Contacts tab test.')
         booleanParam(name: 'TAB_INVESTMENT_ALLOCATOR_METRO_AREAS', defaultValue: false, description: 'Run Investment Allocator Metro Areas tab test.')
         booleanParam(name: 'TAB_INVESTMENT_ALLOCATOR', defaultValue: false, description: 'Run Investment Allocator tab test.')
@@ -586,7 +585,6 @@ def getAvailableTestCaseFiles() {
         'tests/test_fund_launches_tab_performance.py',
         'tests/test_fundraising_news_tab_performance.py',
         'tests/test_hedge_fund_performance_benchmarking_tab_performance.py',
-        'tests/test_hedge_fund_performance_tab_performance.py',
         'tests/test_investment_allocator_contacts_tab_performance.py',
         'tests/test_investment_allocator_metro_areas_tab_performance.py',
         'tests/test_investment_allocator_tab_performance.py',
@@ -642,7 +640,6 @@ def getTestCaseCheckboxMap() {
         [param: 'TAB_FUND_LAUNCHES', file: 'tests/test_fund_launches_tab_performance.py'],
         [param: 'TAB_FUNDRAISING_NEWS', file: 'tests/test_fundraising_news_tab_performance.py'],
         [param: 'TAB_HEDGE_FUND_PERFORMANCE_BENCHMARKING', file: 'tests/test_hedge_fund_performance_benchmarking_tab_performance.py'],
-        [param: 'TAB_HEDGE_FUND_PERFORMANCE', file: 'tests/test_hedge_fund_performance_tab_performance.py'],
         [param: 'TAB_INVESTMENT_ALLOCATOR_CONTACTS', file: 'tests/test_investment_allocator_contacts_tab_performance.py'],
         [param: 'TAB_INVESTMENT_ALLOCATOR_METRO_AREAS', file: 'tests/test_investment_allocator_metro_areas_tab_performance.py'],
         [param: 'TAB_INVESTMENT_ALLOCATOR', file: 'tests/test_investment_allocator_tab_performance.py'],

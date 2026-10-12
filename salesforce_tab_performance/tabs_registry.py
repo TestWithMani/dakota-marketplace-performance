@@ -103,10 +103,6 @@ TAB_REGISTRY: Mapping[str, TabDefinition] = {
         display_name="Fundraising News",
         url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/fundraising-news",
     ),
-    "hedge_fund_performance": TabDefinition(
-        display_name="Hedge Fund Performance",
-        url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/hedge-fund-performance",
-    ),
     "hedge_fund_performance_benchmarking": TabDefinition(
         display_name="Hedge Fund Performance Benchmarking",
         url="https://dakotanetworks.my.site.com/dakotaMarketplace/s/hedge-fund-performance-benchmarking",
