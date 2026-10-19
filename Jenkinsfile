@@ -851,8 +851,9 @@ def getFinalOutcomesFromPytestJson() {
         //   1) collectors: "nodeid":"tests/foo.py","outcome":"passed" (collection OK)
         //   2) collector result rows: "nodeid":"tests/foo.py::test_x" with NO outcome
         // A loose .*? match can glue (2) to a later collector "passed" and invent passes.
-        // Require "::" and keep nodeid→outcome within the same small JSON object.
-        def testMatcher = (jsonText =~ /"nodeid"\s*:\s*"((?:\\.|[^"\\])*)"(?:(?!"nodeid")[\s\S]){0,500}?"outcome"\s*:\s*"((?:\\.|[^"\\])*)"/)
+        // Require "::" and keep nodeid→outcome within the same object (allow larger
+        // objects for rerun/failure payloads).
+        def testMatcher = (jsonText =~ /"nodeid"\s*:\s*"((?:\\.|[^"\\])*)"(?:(?!"nodeid")[\s\S]){0,4000}?"outcome"\s*:\s*"((?:\\.|[^"\\])*)"/)
         while (testMatcher.find()) {
             def nodeId = (testMatcher.group(1) ?: '')
                 .replaceAll(/\\\//, '/')
@@ -890,69 +891,78 @@ def getFinalOutcomesFromPytestJson() {
             return m.find() ? (m.group(1) ?: '0') as int : 0
         }
         def collected = parseSummaryInt('collected')
+        // Prefer pytest-json-report summary for counts. Per-test regex can miss some
+        // rerun/final entries and falsely report "not run" even when the suite finished.
+        def summaryPassed = parseSummaryInt('passed')
+        def summaryFailed = parseSummaryInt('failed') + parseSummaryInt('error')
+        def summarySkipped = parseSummaryInt('skipped') + parseSummaryInt('xfailed') + parseSummaryInt('xpassed')
+        def summaryTotal = summaryPassed + summaryFailed + summarySkipped
 
-        if (!finalOutcomeByNodeId.isEmpty()) {
-            def passed = finalOutcomeByNodeId.findAll { _, status -> status == 'passed' }.size()
-            def failed = finalOutcomeByNodeId.findAll { _, status -> status == 'failed' }.size()
-            def skipped = finalOutcomeByNodeId.findAll { _, status -> status == 'skipped' }.size()
-            def total = passed + failed + skipped
-            // Do NOT invent passes from (collected - completed). Aborted/interrupted
-            // runs leave unexecuted tests; counting them as passed is wrong.
-            if (collected > 0 && total > collected) {
-                // Cap only when plugin artifacts overcount beyond collected.
-                echo "Pytest JSON overcount detected (completed=${total}, collected=${collected}); capping to executed outcomes without inventing passes."
-                // Prefer keeping real failed/skipped; trim excess from passed first.
-                def overflow = total - collected
-                passed = Math.max(passed - overflow, 0)
+        def perPassed = finalOutcomeByNodeId.findAll { _, status -> status == 'passed' }.size()
+        def perFailed = finalOutcomeByNodeId.findAll { _, status -> status == 'failed' }.size()
+        def perSkipped = finalOutcomeByNodeId.findAll { _, status -> status == 'skipped' }.size()
+        def perTotal = perPassed + perFailed + perSkipped
+
+        def passed
+        def failed
+        def skipped
+        def total
+        def statsSource
+        if (summaryTotal > 0 && summaryTotal >= perTotal) {
+            passed = summaryPassed
+            failed = summaryFailed
+            skipped = summarySkipped
+            total = summaryTotal
+            statsSource = 'summary'
+        } else if (perTotal > 0) {
+            passed = perPassed
+            failed = perFailed
+            skipped = perSkipped
+            total = perTotal
+            statsSource = 'per-test'
+        } else {
+            passed = 0
+            failed = 0
+            skipped = 0
+            total = 0
+            statsSource = 'empty'
+        }
+
+        if (collected > 0 && total > collected) {
+            echo "Pytest JSON overcount detected (source=${statsSource}, completed=${total}, collected=${collected}); capping without inventing passes."
+            def overflow = total - collected
+            passed = Math.max(passed - overflow, 0)
+            total = passed + failed + skipped
+            if (total > collected) {
+                def stillOver = total - collected
+                skipped = Math.max(skipped - stillOver, 0)
                 total = passed + failed + skipped
-                if (total > collected) {
-                    def stillOver = total - collected
-                    skipped = Math.max(skipped - stillOver, 0)
-                    total = passed + failed + skipped
-                }
-                if (total > collected) {
-                    failed = Math.max(failed - (total - collected), 0)
-                    total = passed + failed + skipped
-                }
             }
-            def notRun = collected > 0 ? Math.max(collected - total, 0) : 0
-            def failedTests = finalOutcomeByNodeId
-                .findAll { _, status -> status == 'failed' }
-                .collect { nodeId, _ -> extractDisplayNameFromNodeId(nodeId as String) }
-                .findAll { it }
-                .unique()
-            if (notRun > 0) {
-                echo "Pytest JSON incomplete run -> completed:${total}, collected:${collected}, not_run:${notRun}, passed:${passed}, failed:${failed}, skipped:${skipped}"
+            if (total > collected) {
+                failed = Math.max(failed - (total - collected), 0)
+                total = passed + failed + skipped
             }
+        }
+
+        def notRun = collected > 0 ? Math.max(collected - total, 0) : 0
+        def failedTests = finalOutcomeByNodeId
+            .findAll { _, status -> status == 'failed' }
+            .collect { nodeId, _ -> extractDisplayNameFromNodeId(nodeId as String) }
+            .findAll { it }
+            .unique()
+
+        if (perTotal > 0 && summaryTotal > 0 && perTotal != summaryTotal) {
+            echo "Pytest JSON count source=${statsSource} (summary=${summaryTotal}, per-test=${perTotal}, collected=${collected})"
+        }
+        if (notRun > 0) {
+            echo "Pytest JSON incomplete run -> source:${statsSource}, completed:${total}, collected:${collected}, not_run:${notRun}, passed:${passed}, failed:${failed}, skipped:${skipped}"
+        }
+
+        if (total > 0 || collected > 0 || !failedTests.isEmpty()) {
             return [
                 hasData: true,
                 stats: [total: total, passed: passed, failed: failed, skipped: skipped, collected: collected, not_run: notRun],
                 failedTests: failedTests
-            ]
-        }
-
-        // Fallback to summary counters if per-test entries are unavailable.
-        // Use only explicit passed/failed/skipped — never treat "collected" as passed.
-        def passed = parseSummaryInt('passed')
-        def failed = parseSummaryInt('failed') + parseSummaryInt('error')
-        def skipped = parseSummaryInt('skipped') + parseSummaryInt('xfailed') + parseSummaryInt('xpassed')
-        def total = passed + failed + skipped
-        if (collected > 0 && total > collected) {
-            echo "Pytest JSON summary overcount detected (completed=${total}, collected=${collected}); capping without inventing passes."
-            def overflow = total - collected
-            passed = Math.max(passed - overflow, 0)
-            total = passed + failed + skipped
-        }
-        def notRun = collected > 0 ? Math.max(collected - total, 0) : 0
-        // hasData when we have either executed outcomes OR a collected count from an aborted run.
-        if (total > 0 || collected > 0) {
-            if (notRun > 0) {
-                echo "Pytest JSON summary incomplete run -> completed:${total}, collected:${collected}, not_run:${notRun}, passed:${passed}, failed:${failed}, skipped:${skipped}"
-            }
-            return [
-                hasData: true,
-                stats: [total: total, passed: passed, failed: failed, skipped: skipped, collected: collected, not_run: notRun],
-                failedTests: []
             ]
         }
     } catch (Exception ex) {
@@ -1070,12 +1080,14 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
                 "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
             }.join('') + "<div style=\"margin-top:8px;color:#9a3412;font-weight:600;\">Suite stopped early — ${notRun} of ${collected} collected tests did not run. Do not treat this as a full green run.</div>"
             : "<span style=\"color:#9a3412;font-weight:600;\">Suite stopped early — ${notRun} of ${collected} collected tests did not run. Counts above are only for finished tests.</span>"
+    } else if (cleanedFailedTests) {
+        failedTestSummary = cleanedFailedTests.collect { item ->
+            "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
+        }.join('')
+    } else if ((stats.failed ?: 0) as int > 0) {
+        failedTestSummary = "<span style=\"color:#9a3412;font-weight:600;\">${stats.failed} failed test(s) were reported. Open Allure/JUnit for the exact tab names.</span>"
     } else {
-        failedTestSummary = cleanedFailedTests
-            ? cleanedFailedTests.collect { item ->
-                "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
-            }.join('')
-            : '<span style="color:#065f46;font-weight:600;">No failed tests or tab timeouts were detected in this run.</span>'
+        failedTestSummary = '<span style="color:#065f46;font-weight:600;">No failed tests or tab timeouts were detected in this run.</span>'
     }
 
     def statusCfg = [
