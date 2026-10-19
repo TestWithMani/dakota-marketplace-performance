@@ -694,11 +694,10 @@ def getTestStatistics() {
     def stats = [total: 0, passed: 0, failed: 0, skipped: 0, collected: 0, not_run: 0]
     def junitPath = env.PYTEST_JUNIT ?: 'test-results/pytest.xml'
     def jsonSnapshot = getFinalOutcomesFromPytestJson()
+    def jsonStats = (jsonSnapshot.hasData as boolean) ? (jsonSnapshot.stats as Map) : null
 
-    if (jsonSnapshot.hasData as boolean) {
-        return jsonSnapshot.stats as Map
-    }
-
+    // Prefer JUnit totals for finished runs. pytest-json-report summary/per-test
+    // can undercount when pytest-rerunfailures is enabled, which falsely creates "not run".
     if (fileExists(junitPath)) {
         try {
             def xmlText = readFile(junitPath)
@@ -708,18 +707,30 @@ def getTestStatistics() {
             def skipped = extractIntFromXmlAttribute(xmlText, 'skipped')
             def passed = Math.max(tests - failures - errors - skipped, 0)
 
-            stats.total = tests
-            stats.failed = failures + errors
-            stats.skipped = skipped
-            stats.passed = passed
-            stats.collected = tests
-            stats.not_run = 0
-            echo "Using JUnit fallback stats -> total:${stats.total}, passed:${stats.passed}, failed:${stats.failed}, skipped:${stats.skipped}"
+            if (tests > 0) {
+                def collected = jsonStats?.collected ?: tests
+                if ((collected as int) < tests) {
+                    collected = tests
+                }
+                stats.total = tests
+                stats.failed = failures + errors
+                stats.skipped = skipped
+                stats.passed = passed
+                stats.collected = collected
+                stats.not_run = Math.max((collected as int) - tests, 0)
+                echo "Using JUnit stats -> total:${stats.total}, passed:${stats.passed}, failed:${stats.failed}, skipped:${stats.skipped}, collected:${stats.collected}, not_run:${stats.not_run}"
+                return stats
+            }
         } catch (Exception ex) {
-            echo "Could not parse JUnit XML fallback: ${ex.message}"
+            echo "Could not parse JUnit XML stats: ${ex.message}"
         }
     } else {
-        echo "JUnit XML report not found at ${junitPath}; no fallback stats available."
+        echo "JUnit XML report not found at ${junitPath}; trying JSON stats."
+    }
+
+    if (jsonStats != null) {
+        echo "Using JSON stats -> total:${jsonStats.total}, passed:${jsonStats.passed}, failed:${jsonStats.failed}, skipped:${jsonStats.skipped}, collected:${jsonStats.collected}, not_run:${jsonStats.not_run}"
+        return jsonStats
     }
 
     return stats
@@ -773,10 +784,14 @@ def getSkippedInfraTestNames() {
     if (fileExists(junitPath)) {
         try {
             def xmlText = readFile(junitPath)
-            def matcher = (xmlText =~ /(?si)<testcase\b([^>]*)>(?:(?!<\/testcase>).)*<skipped\b[^>]*message=(["'])(.*?)\2/)
+            // Match full <testcase>...</testcase>; INFRA_SKIP may be in message= or element body.
+            def matcher = (xmlText =~ /(?si)<testcase\b([^>]*)>((?:(?!<\/testcase>).)*)<\/testcase>/)
             while (matcher.find()) {
-                def message = (matcher.group(3) ?: '').trim()
-                if (!message.contains('INFRA_SKIP:')) {
+                def body = matcher.group(2) ?: ''
+                if (!(body =~ /(?si)<skipped\b/)) {
+                    continue
+                }
+                if (!body.contains('INFRA_SKIP:')) {
                     continue
                 }
                 def attrs = matcher.group(1) ?: ''
@@ -800,11 +815,13 @@ def getSkippedInfraTestNames() {
         }
     }
 
+    // Only use JSON when JUnit did not already identify infra skips (loose JSON
+    // matching can pair the wrong nodeid with an INFRA_SKIP longrepr).
     def reportPath = env.PYTEST_JSON ?: 'test-results/report.json'
-    if (fileExists(reportPath)) {
+    if (skipped.isEmpty() && fileExists(reportPath)) {
         try {
             def jsonText = readFile(reportPath)
-            def testMatcher = (jsonText =~ /"nodeid"\s*:\s*"((?:\\.|[^"\\])*)".*?"outcome"\s*:\s*"skipped".*?"longrepr"\s*:\s*"((?:\\.|[^"\\])*)"/)
+            def testMatcher = (jsonText =~ /"nodeid"\s*:\s*"((?:\\.|[^"\\])*)"(?:(?!"nodeid")[\s\S]){0,4000}?"outcome"\s*:\s*"skipped"(?:(?!"nodeid")[\s\S]){0,4000}?"longrepr"\s*:\s*"((?:\\.|[^"\\])*)"/)
             while (testMatcher.find()) {
                 def longrepr = (testMatcher.group(2) ?: '')
                     .replaceAll(/\\n/, '\n')
@@ -817,6 +834,9 @@ def getSkippedInfraTestNames() {
                     .replaceAll(/\\\//, '/')
                     .replaceAll(/\\"/, '"')
                     .trim()
+                if (!nodeId.contains('::')) {
+                    continue
+                }
                 def displayName = extractDisplayNameFromNodeId(nodeId)
                 if (displayName) {
                     skipped << displayName
@@ -908,18 +928,20 @@ def getFinalOutcomesFromPytestJson() {
         def skipped
         def total
         def statsSource
-        if (summaryTotal > 0 && summaryTotal >= perTotal) {
-            passed = summaryPassed
-            failed = summaryFailed
-            skipped = summarySkipped
-            total = summaryTotal
-            statsSource = 'summary'
-        } else if (perTotal > 0) {
+        // Prefer the larger completed count. Both summary and per-test can undercount
+        // after reruns; never prefer a smaller source that invents "not run".
+        if (perTotal > summaryTotal) {
             passed = perPassed
             failed = perFailed
             skipped = perSkipped
             total = perTotal
             statsSource = 'per-test'
+        } else if (summaryTotal > 0) {
+            passed = summaryPassed
+            failed = summaryFailed
+            skipped = summarySkipped
+            total = summaryTotal
+            statsSource = 'summary'
         } else {
             passed = 0
             failed = 0
@@ -1079,12 +1101,6 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
                 "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
             }.join('') + "<div style=\"margin-top:8px;color:#334155;font-weight:600;\">Build aborted — ${notRun} of ${collected} collected tests did not run.</div>"
             : "<span style=\"color:#334155;font-weight:600;\">Build aborted — ${notRun} of ${collected} collected tests did not run. Counts above are only for finished tests.</span>"
-    } else if (notRun > 0) {
-        failedTestSummary = cleanedFailedTests
-            ? cleanedFailedTests.collect { item ->
-                "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
-            }.join('') + "<div style=\"margin-top:8px;color:#9a3412;font-weight:600;\">Suite stopped early — ${notRun} of ${collected} collected tests did not run. Do not treat this as a full green run.</div>"
-            : "<span style=\"color:#9a3412;font-weight:600;\">Suite stopped early — ${notRun} of ${collected} collected tests did not run. Counts above are only for finished tests.</span>"
     } else if (cleanedFailedTests) {
         failedTestSummary = cleanedFailedTests.collect { item ->
             "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
