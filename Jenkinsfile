@@ -1031,12 +1031,17 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
     def actualStatus = currentBuild.result ?: buildStatus
     def notRun = (stats.not_run ?: 0) as int
     def collected = (stats.collected ?: 0) as int
+    // Avoid "(x ?: 0) as int > 0" — Jenkins Groovy parser rejects that form.
+    def failedCount = 0
+    if (stats.failed != null) {
+        failedCount = stats.failed as int
+    }
 
     // Preserve Jenkins infra/build failures as source of truth.
     if (!(actualStatus in ['FAILURE', 'ABORTED'])) {
         if (stats.total == 0) {
             actualStatus = 'UNSTABLE'
-        } else if (stats.failed > 0) {
+        } else if (failedCount > 0) {
             actualStatus = 'FAILURE'
         } else {
             actualStatus = 'SUCCESS'
@@ -1084,8 +1089,8 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
         failedTestSummary = cleanedFailedTests.collect { item ->
             "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
         }.join('')
-    } else if ((stats.failed ?: 0) as int > 0) {
-        failedTestSummary = "<span style=\"color:#9a3412;font-weight:600;\">${stats.failed} failed test(s) were reported. Open Allure/JUnit for the exact tab names.</span>"
+    } else if (failedCount > 0) {
+        failedTestSummary = "<span style=\"color:#9a3412;font-weight:600;\">${failedCount} failed test(s) were reported. Open Allure/JUnit for the exact tab names.</span>"
     } else {
         failedTestSummary = '<span style="color:#065f46;font-weight:600;">No failed tests or tab timeouts were detected in this run.</span>'
     }
