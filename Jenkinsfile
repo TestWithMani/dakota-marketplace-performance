@@ -1028,13 +1028,11 @@ def logTestSummaryToConsole(String label = 'Test summary') {
         ? "Infra skipped tabs: ${skippedInfraTests.join(', ')}"
         : 'Infra skipped tabs: none'
     def collected = (stats.collected ?: 0) as int
-    def notRun = (stats.not_run ?: 0) as int
     def collectedLine = collected > 0 ? "Collected: ${collected}" : null
-    def notRunLine = notRun > 0 ? "Not run : ${notRun}" : null
     def abortNote = ((currentBuild?.result ?: currentBuild?.currentResult ?: '') == 'ABORTED')
         ? 'NOTE    : Build was ABORTED — counts reflect only tests that actually finished.'
         : null
-    def extraLines = [collectedLine, notRunLine, abortNote].findAll { it }.join('\n')
+    def extraLines = [collectedLine, abortNote].findAll { it }.join('\n')
     def extraBlock = extraLines ? "\n${extraLines}" : ''
     echo """
 ================ ${label} ================
@@ -1051,8 +1049,6 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
     def stats = getTestStatistics()
     def failedTests = getFailedTestNames()
     def actualStatus = currentBuild.result ?: buildStatus
-    def notRun = (stats.not_run ?: 0) as int
-    def collected = (stats.collected ?: 0) as int
     // Avoid "(x ?: 0) as int > 0" — Jenkins Groovy parser rejects that form.
     def failedCount = 0
     if (stats.failed != null) {
@@ -1095,18 +1091,14 @@ def sendEmailNotification(String buildStatus, String defaultEmail, String additi
     def failedTestSummary
     if (actualStatus == 'ABORTED' && stats.total == 0) {
         failedTestSummary = '<span style="color:#334155;font-weight:600;">Build was aborted before any tests completed. Passed count is 0 (not a successful run).</span>'
-    } else if (actualStatus == 'ABORTED' && notRun > 0) {
-        failedTestSummary = cleanedFailedTests
-            ? cleanedFailedTests.collect { item ->
-                "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
-            }.join('') + "<div style=\"margin-top:8px;color:#334155;font-weight:600;\">Build aborted — ${notRun} of ${collected} collected tests did not run.</div>"
-            : "<span style=\"color:#334155;font-weight:600;\">Build aborted — ${notRun} of ${collected} collected tests did not run. Counts above are only for finished tests.</span>"
     } else if (cleanedFailedTests) {
         failedTestSummary = cleanedFailedTests.collect { item ->
             "<div style=\"margin:0 0 6px;padding:7px 10px;background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;color:#9a3412;\">${item}</div>"
         }.join('')
     } else if (failedCount > 0) {
         failedTestSummary = "<span style=\"color:#9a3412;font-weight:600;\">${failedCount} failed test(s) were reported. Open Allure/JUnit for the exact tab names.</span>"
+    } else if (actualStatus == 'ABORTED') {
+        failedTestSummary = '<span style="color:#334155;font-weight:600;">Build was aborted.</span>'
     } else {
         failedTestSummary = '<span style="color:#065f46;font-weight:600;">No failed tests or tab timeouts were detected in this run.</span>'
     }
